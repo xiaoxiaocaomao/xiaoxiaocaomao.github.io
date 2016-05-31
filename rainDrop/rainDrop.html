@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+    * {
+        margin: 0;
+        padding: 0;
+    }
+    body {
+        overflow: hidden;
+        transition: background 1s;
+    }
+    .toggler {
+        position: absolute;        
+        width: 60px;
+        height: 60px;
+        line-height: 60px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: opacity 1s;
+    }
+    .toggler:hover {
+        opacity: 0.8;
+    }
+    .toggler.auto {
+        width: 130px;
+        left: 20px;
+        top: 20px;
+        text-align: center;
+        border: 1px solid #ffffff;
+        color: #ffffff;
+    }
+    .toggler.day {
+        left: 20px;
+        top: 90px;
+        background: #66ccff;
+    }
+    .toggler.night {
+        left: 90px;
+        top: 90px;
+        background: #666666;
+    }
+    .toggler span {
+        position: relative;
+        z-index: 25;
+    }
+    #progress-mask {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: inline-block;
+        width: 0;
+        height: 60px;
+        background: orange;
+        z-index: 1;
+        border-radius: 5px;
+        opacity: 0.6;
+        transition: width 10s;
+    }
+    #toggler-amount {
+        position: absolute;
+        left: 20px;
+        top: 160px;
+        width: 130px;
+    }
+    .amount-axis {
+        width: 100%;
+        height: 10px;
+        border: 3px solid #e3e3e3;
+        background: #fff;
+        border-radius: 5px;
+        box-sizing: border-box;
+        margin: 20px 0 0;
+    }
+    .amount-ctrl {
+        position: absolute;
+        left: 0;
+        top: 15px;
+        width: 16px;
+        height: 16px;
+        border: 3px solid #868686;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+    }
+    .amount-ctrl:hover {
+        background: #f1f1f1;
+    }
+    </style>
+</head>
+
+<body>
+
+    <div id="toggler-auto" class="toggler auto" onclick="changeToggleStatus()">
+        <span>AUTO</span>
+        <span id="toggler-status">ON</span>
+        <span id="progress-mask"></span>
+    </div>
+    <div id="toggler-day" class="toggler day" onclick="manualToggle('day')">
+    </div>
+    <div id="toggler-night" class="toggler night" onclick="manualToggle('night')">
+    </div>
+    <div id="toggler-amount">
+        <div class="amount-axis"></div>
+        <div id="amount-ctrl" class="amount-ctrl"></div>
+    </div>
+
+    <script src="./libs/d3/d3.min.js"></script>
+    <script>
+
+    const COLOR_SCHEDULE = {
+        'day': {
+            back: '#f1f1f1',
+            rain: '#000000'
+        },
+        'night': {
+            back: '#001122',
+            rain: '#ffffff'
+        }
+    };
+
+    var dropAmount = 500;
+    var dropAmountRange = {
+        min: 0,
+        max: 800
+    };
+
+    var width = window.innerWidth,
+        height = window.innerHeight;
+
+    var svg = d3.select('body')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+    var group = svg.append('g');
+    var rainColor = COLOR_SCHEDULE['night'].rain;
+    var autoToggleStatus = true;
+    var autoToggleTimer;
+    var progressMask = document.getElementById('progress-mask');
+
+    // init
+    init()
+
+    /**
+     * @name init
+     * @description initilization
+     */
+    function init() {
+        // set auto toggle
+        autoToggle();
+
+        setInterval(function() {
+            var dropData = generateData();
+            draw(dropData);
+        }, 10);
+
+        // init amount style
+        setAmountStyle();
+        bindAmountEvent();
+    }
+
+    /**
+     * @name setAmountStyle
+     * @description set rainfall amount style
+     */
+    function setAmountStyle() {
+        var dropAmountCtrl = document.getElementById('amount-ctrl');
+        var maxWidth = dropAmountCtrl.parentNode.clientWidth;
+
+        var targetLeft = dropAmount / dropAmountRange.max * maxWidth;
+        dropAmountCtrl.style.left = targetLeft + 'px';
+    }
+
+    /**
+     * @name bindAmountEvent
+     * @description bind event for amount controller
+     */
+    function bindAmountEvent() {
+        var dropAmountCtrl = document.getElementById('amount-ctrl');
+        var maxWidth = dropAmountCtrl.parentNode.clientWidth;
+        var refLeft = dropAmountCtrl.parentNode.offsetLeft;
+        var moveToken = false;
+
+
+        dropAmountCtrl.addEventListener('mousedown', function(e) { 
+            moveToken = true;
+            locationRecord = e.clientX;
+        });
+
+        dropAmountCtrl.addEventListener('mousemove', function(e) {
+
+            if(!moveToken) {
+                return false;
+            }
+
+            var x = e.clientX;
+            var delta = x - locationRecord;
+            var _targetLeft = parseInt(dropAmountCtrl.style.left) + delta;
+            dropAmount = dropAmountRange.max * (_targetLeft) / maxWidth;
+
+            if(delta > 0 && locationRecord < maxWidth + 20) {
+                // right
+                dropAmountCtrl.style.left = _targetLeft + 'px';
+            } else if(delta < 0 && locationRecord > 20) {
+                // left
+                dropAmountCtrl.style.left = _targetLeft + 'px';
+            }
+            locationRecord = locationRecord + delta;
+        });
+
+        dropAmountCtrl.addEventListener('mouseup', function(e) { 
+            moveToken = false;
+        });
+
+        dropAmountCtrl.addEventListener('mouseout', function(e) { 
+            moveToken = false;
+        });
+    }
+
+    /**
+     * @name autoToggle
+     * @description auto toggle status
+     */
+    function autoToggle() {
+        if(autoToggleStatus) {
+            toggleAction();
+            startTimer();                       
+        }
+    }
+
+    /**
+     * @name changeToggleStatus
+     * @description make auto toggler ON
+     */
+    function changeToggleStatus() {
+        autoToggleStatus = true;
+        document.getElementById('toggler-status').innerHTML = 'ON';
+        startTimer();
+        progressMask.style.transition = 'width 10s';
+        progressMask.style.width = (!progressMask.style.width || progressMask.style.width === '0px') ? '100%': '0';
+    }
+
+    /**
+     * @name toggleAction
+     * @description toggle action
+     */
+    function toggleAction() {
+        progressMask.style.transition = 'width 10s';
+        setTimeout(function() {
+            progressMask.style.width = (!progressMask.style.width || progressMask.style.width === '0px') ? '100%': '0';
+            if(rainColor === COLOR_SCHEDULE['night'].rain) {
+                setDayOrNight('day');
+            } else {
+                setDayOrNight('night');
+            }
+        }, 0);        
+    }
+
+    /**
+     * @name startTimer
+     * @description start the timer
+     */
+    function startTimer() {
+        // init
+        autoToggleTimer = setInterval(function() {            
+            toggleAction();
+        }, 10000); 
+    }
+
+    /**
+     * @name manualToggle
+     * @description toggle day or night manually
+     * @param  {string} type day or night
+     */
+    function manualToggle(type) {
+        autoToggleStatus = false;
+        document.getElementById('toggler-status').innerHTML = 'OFF';
+        progressMask.style.transition = 'none';
+        progressMask.style.width = '0';
+        clearInterval(autoToggleTimer);
+        setDayOrNight(type);
+    }
+    
+    /**
+     * @name setDayOrNight
+     * @description Set whether day or night
+     * @param {string} type
+     */
+    function setDayOrNight(type) {
+        document.body.style.background = COLOR_SCHEDULE[type].back;
+        // autoToggleStatus && (progressMask.style.width = '100%');
+        rainColor = COLOR_SCHEDULE[type].rain;        
+    }
+
+    /**
+     * @name generateData
+     * @description Get data array
+     * @return {array}
+     */
+    function generateData() {
+        var _dropData = [];
+
+        for (var i = 0; i < dropAmount; i++) {
+            _dropData.push(generateOne());
+        }
+
+        function generateOne() {
+            var randomDeltaX = Math.floor(Math.random() * 6) - 3;
+            var randomDeltaY = 1 - (Math.floor(Math.random() * 100) % 20) / 100;
+            var _x1 = xRange(width),
+                _x2 = _x1 + randomDeltaX,
+                _long = dropLong(),
+                _y1 = 0,
+                _y2 = _y1 + _long;
+
+            var _deltaX1 = randomDeltaX * height / _y2;
+            var targetX1 = _x1 + _deltaX1,
+                targetX2 = targetX1 + randomDeltaX,
+                targetY2 = height * randomDeltaY,
+                targetY1 = height * randomDeltaY - _long;
+
+            return {
+                origin: {
+                    x1: _x1,
+                    x2: _x2,
+                    y1: _y1,
+                    y2: _y2
+                },
+                target: {
+                    x1: targetX1,
+                    x2: targetX2,
+                    y1: targetY1,
+                    y2: targetY2
+                }
+            };
+        }
+
+        function xRange(w) {
+            return Math.floor(Math.random() * w);
+        }
+
+        function dropLong() {
+            return Math.floor(Math.random() * 30) + 30;
+        }
+
+        return _dropData;
+    }
+
+    /**
+     * @name draw
+     * @param  {array} data
+     */
+    function draw(data) {
+        var lines = group.selectAll('line')
+            .data(data);
+
+        lines.enter()
+            .append('line')
+            .attr('x1', function(d, i) {
+                return d.origin.x1;
+            })
+            .attr('y1', function(d, i) {
+                return d.origin.y1;
+            })
+            .attr('x2', function(d, i) {
+                return d.origin.x2;
+            })
+            .attr('y2', function(d, i) {
+                return d.origin.y2;
+            })
+            .style('stroke', rainColor)
+            .style('stroke-width', '0.6')
+            .transition()
+            .duration(function(d, i) {
+                return Math.random() * 200 + 300;
+            })
+            .ease('linear')
+            .attr('x1', function(d, i) {
+                return d.target.x1;
+            })
+            .attr('y1', function(d, i) {
+                return d.target.y1;
+            })
+            .attr('x2', function(d, i) {
+                return d.target.x2;
+            })
+            .attr('y2', function(d, i) {
+                return d.target.y2;
+            })
+            .style('opacity', 0.3)
+            .each('end', cb);
+
+        function cb() {
+            this.remove();
+            dropTailer(this.__data__);
+        }
+
+        function dropTailer(d) {
+            var cx = d.target.x2,
+                cy = d.target.y2;
+
+            var ellipse = group.append('ellipse')
+                .attr('cx', cx)
+                .attr('cy', cy)
+                .style('stroke', rainColor)
+                .style('stroke-width', 1)
+                .style('fill', 'none');
+
+            var linearRX = d3.scale.linear()
+                .domain([0, 1])
+                .range([0, 3]);
+
+            var linearRY = d3.scale.linear()
+                .domain([0, 1])
+                .range([0, 1]);
+
+            var aniEllipse = ellipse.transition()
+                .duration(100)
+                .attrTween('rx', function() {                    
+                    return function(t) {
+                        return linearRX(t);
+                    };
+                })
+                .attrTween('ry', function() {                    
+                    return function(t) {
+                        return linearRY(t);
+                    };
+                })
+                .each('end', function() {
+                    this.remove();
+                });
+        }
+    }
+
+    </script>
+</body>
+
+</html>
